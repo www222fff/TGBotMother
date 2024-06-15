@@ -1,4 +1,4 @@
 [
-    {"api_id": 100, "api_hash": "API_HASH_1", "session_name": "session_name_1"},
-    {"api_id": 101, "api_hash": "API_HASH_2", "session_name": "session_name_2"}
+    {"api_id": 100, "api_hash": "API_HASH_1"},
+    {"api_id": 101, "api_hash": "API_HASH_2"}
 ]

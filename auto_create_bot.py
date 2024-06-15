@@ -87,7 +87,8 @@ async def main(operation):
     proxy = (socks.HTTP, '135.245.192.7', 8000)
 
     for account in accounts:
-        async with TelegramClient(account['session_name'], account['api_id'], account['api_hash'], proxy=proxy) as client:
+        session_name = str(account['api_id']) #session name reuse api_id value
+        async with TelegramClient(session_name, account['api_id'], account['api_hash'], proxy=proxy) as client:
             if operation == 'create':
                 # Get the existing bots for the account
                 result = await client(GetContactsRequest(0))
@@ -102,7 +103,7 @@ async def main(operation):
                         await set_bot_profile(client, bot_name)  # Set bot profile
                         write_bot_token(bot_token)  # Write Bot Token to file
                 else:
-                    print(f'Account {account["session_name"]} already has {len(existing_bots)} bots, which is the maximum allowed.')
+                    print(f'Account {account["api_id"]} already has {len(existing_bots)} bots, which is the maximum allowed.')
 
             elif operation == 'delete':
                 # Delete all bots (example)
