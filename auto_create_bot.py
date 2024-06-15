@@ -7,6 +7,7 @@ from PIL import Image
 import random
 import string
 import asyncio
+import socks
 
 # Function to generate random name and unique part
 def generate_random_name():
@@ -83,11 +84,12 @@ async def main(operation):
 
     # Define the maximum number of bots allowed for each account
     MAX_BOTS_PER_ACCOUNT = 5
+    proxy = (socks.HTTP, '135.245.192.7', 8000)
 
     for account in accounts:
-        async with TelegramClient(account['session_name'], account['api_id'], account['api_hash']) as client:
+        async with TelegramClient(account['session_name'], account['api_id'], account['api_hash'], proxy=proxy) as client:
             if operation == 'create':
-               # Get the existing bots for the account
+                # Get the existing bots for the account
                 result = await client(GetContactsRequest(0))
                 existing_bots = [user for user in result.users if user.bot]
 
