@@ -1,118 +1,197 @@
 import argparse
 import json
+import csv
+import os
 from telethon import TelegramClient, events
 from telethon.tl.functions.photos import UploadProfilePhotoRequest
 from telethon.tl.functions.account import UpdateProfileRequest
+from telethon.tl.functions.contacts import GetContactsRequest
 from PIL import Image
+from io import BytesIO  # Import BytesIO from the io module
 import random
 import string
 import asyncio
 import socks
 
-# Function to generate random name and unique part
-def generate_random_name():
-    adjectives = ['Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Pink']
-    nouns = ['Dog', 'Cat', 'Bird', 'Elephant', 'Lion', 'Tiger', 'Bear']
-    
-    adjective = random.choice(adjectives)
-    noun = random.choice(nouns)
-    unique_part = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+api_id = 26120312
+api_hash = "a122106d78462db8ab24b1028f3b64b0"
+MAX_BOTS_PER_ACCOUNT = 5
+proxy = (socks.HTTP, '135.245.192.7', 8000)
 
-    bot_name = f'{adjective}{noun}'
-    bot_username = f'{adjective}{noun}{unique_part}_bot'
-
-    return bot_name, bot_username   
-
-# Function to generate random avatar
-def generate_random_avatar(size=128):
-    image = Image.new('RGB', (size, size), color=(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
-    return image
-
-# Function to create a bot
-async def create_bot(client, bot_name, bot_username):
+async def create_bot(client, bot):
     bot_token = None
+    # Event to signal completion of bot_token retrieval
+    token_retrieved = asyncio.Event()
 
-    async def send_message_and_wait(event, message):
+    async def send_message_and_wait(message):
+        delay_seconds = random.randint(3, 10)
+        await asyncio.sleep(delay_seconds)
         await client.send_message('BotFather', message)
-        response = await event.wait()
-        return response.message
+        return None
 
-    @client.on(events.NewMessage(from_users='BotFather'))
     async def handler(event):
-        nonlocal bot_token
+        nonlocal bot_token, token_retrieved
         message = event.message.message
 
         if "Alright, a new bot. How are we going to call it? Please choose a name for your bot." in message:
-            response_message = await send_message_and_wait(event, bot_name)
+            response_message = await send_message_and_wait(bot['name'])
         elif "Good. Now let's choose a username for your bot." in message:
-            response_message = await send_message_and_wait(event, bot_username)
+            response_message = await send_message_and_wait(bot['username'])
+        elif "Sorry, too many attempts." in message:
+            token_retrieved.set()
+            bot_token = bot['username'] + '_invalid'
+            return bot_token
         elif "Done! Congratulations on your new bot." in message:
-            bot_token = message.split("Use this token to access the HTTP API: ")[1].split()[0]
+            try:
+                # Find the line with the token
+                lines = message.splitlines()
+                for line in lines:
+                    if line.startswith("Use this token to access the HTTP API:"):
+                        bot_token = lines[lines.index(line) + 1].strip()
+                        token_retrieved.set()  # Signal that bot_token has been retrieved
+                        print("Bot Token:", bot_token)
+                        return bot_token  # Exit handler function and return token
+            except IndexError:
+                print("Error: Failed to extract bot token from message:", message)
 
-    await client.send_message('BotFather', '/newbot')
-    await client.run_until_disconnected()
+    # Register the handler function for BotFather messages
+    client.add_event_handler(
+        handler, events.NewMessage(
+            from_users='BotFather'))
+    await send_message_and_wait('/newbot')
 
+    # Wait for the handler function to set the event indicating bot_token
+    await token_retrieved.wait()
+
+    print(f"create {bot_token} success")
     return bot_token
 
-# Function to set bot profile
-async def set_bot_profile(client):
-    # Generate a random avatar
-    avatar_image = generate_random_avatar()
-    # Upload the avatar
-    file = await client.upload_file(avatar_image)
-    await client(UploadProfilePhotoRequest(file))
 
-# Function to delete all bots
+async def set_bot_profile(client, bot):
+    avatar_dir = './photos'
+    avatar_image = bot['photo']
+    avatar_path = os.path.join(avatar_dir, avatar_image)
+
+    if not os.path.exists(avatar_path):
+        print(f"Error: File {avatar_path} does not exist.")
+        return
+
+    try:
+        bot_entity = await client.get_entity(bot['username'])
+        photo = await client.upload_file(avatar_path, part_size_kb=512)
+        result = await client(UploadProfilePhotoRequest(bot_entity, file=photo))
+        print(f"Profile photo set for {bot['username']}")
+    except Exception as e:
+        print(f"Error uploading profile photo for {bot['username']}: {e}")
+
+def write_bot_token(username, bots):
+    with open('output.csv', 'a') as file:
+        file.write(f"Account: {username}\n")
+        for bot in bots:
+            file.write(f"Bot Token: {bot}\n")
+        file.write("\n")
+
+async def list_my_bots(client):
+    bots = []
+    try:
+        # Fetch the list of bots using BotFather's /mybots command
+        await client.send_message('BotFather', '/mybots')
+        response = await client.get_messages('BotFather', limit=1)
+
+        if response and response[0].text.startswith(
+                "Choose a bot from the list below:"):
+            # Extract buttons from the reply markup
+            reply_markup = response[0].reply_markup
+            if reply_markup:
+                for row in reply_markup.rows:
+                    for button in row.buttons:
+                        if button.text.startswith('@'):
+                            bot_username = button.text.strip('@')
+                            bots.append(bot_username)
+                            print(f'Found bot: {bot_username}')
+
+            print(f'Listed {len(bots)} bots')
+        else:
+            print('Failed to list bots: BotFather did not respond correctly')
+    except Exception as e:
+        print(f'Error listing bots: {e}')
+    return bots
+
+
+async def delete_bot(client, bot_username):
+    try:
+        # Send delete command to BotFather for the specific bot
+        await client.send_message('BotFather', f'/deletebot')
+        response = await client.get_messages('BotFather', limit=1)
+        if response and f"Choose a bot to delete." in response[0].text:
+            await client.send_message('BotFather', f'@{bot_username}')
+            await client.send_message('BotFather', 'Yes, I am totally sure.')
+            print(f'Bot {bot_username} successfully deleted')
+        else:
+            print(f'Error: Bot {bot_username} not found or cannot be deleted')
+    except Exception as e:
+        print(f'Error deleting bot {bot_username}: {e}')
+
+
 async def delete_all_bots(client):
-    # Example: Fetch all bots and delete them
-    bots = await client.get_participants('me', filter=lambda u: u.bot)
-    for bot in bots:
-        await client.delete_messages(bot.username, await client.get_messages(bot.username))
+    bot_usernames = await list_my_bots(client)
+    for bot_username in bot_usernames:
+        await delete_bot(client, bot_username)
 
-# Function to write Bot Token to file
-def write_bot_token(bot_token):
-    with open('bot_token.txt', 'w') as f:
-        f.write(bot_token)
-    print(f'Bot token written to bot_token.txt')
+async def operate_bots_for_account(phone, bots, operation):
+    session_name = os.path.join('sessions', f"{phone}.session")
+    async with TelegramClient(session_name, api_id, api_hash, proxy=proxy) as client:
+        await client.start()
+        if operation == 'create':
+            bot_tokens = []
+            for bot in bots:
+                # Check if the number of existing bots is less than the maximum
+                bot_token = await create_bot(client, bot)
+                if bot_token:
+                    bot_tokens.append(bot_token)
+                    await set_bot_profile(client, bot)  # Set bot profile
+            print(f"Account {phone} created all bots done.")
+            write_bot_token(phone, bot_tokens)  # Write Bot Token to file
 
-# Main function to manage the entire process
+        elif operation == 'delete':
+            await delete_all_bots(client)
+
+        await client.disconnect()
+
 async def main(operation):
-    # Read accounts information from file
-    with open('accounts.json', 'r') as f:
-        accounts = json.load(f)
+    with open('output.csv', 'w') as f:
+        pass  # This will clear the file
 
-    # Define the maximum number of bots allowed for each account
-    MAX_BOTS_PER_ACCOUNT = 5
-    proxy = (socks.HTTP, '135.245.192.7', 8000)
+    accounts = {}
+    with open('input.csv', 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            phone = row['phone']
+            bot = {
+                'username': row['bot_username'],
+                'name': row['bot_name'],
+                'photo': row['bot_photo'],
+            }
 
-    for account in accounts:
-        session_name = str(account['api_id']) #session name reuse api_id value
-        async with TelegramClient(session_name, account['api_id'], account['api_hash'], phone=account['phoneNo'], proxy=proxy) as client:
-            if operation == 'create':
-                # Get the existing bots for the account
-                result = await client(GetContactsRequest(0))
-                existing_bots = [user for user in result.users if user.bot]
+            # Check if the phone number is already a key in the dictionary
+            if phone in accounts:
+                accounts[phone].append(bot)
+            else:
+                accounts[phone] = [bot]
 
-                # Check if the number of existing bots is less than the maximum allowed
-                if len(existing_bots) < MAX_BOTS_PER_ACCOUNT:
-                    # Create a new bot
-                    bot_name, bot_username = generate_random_name()
-                    bot_token = await create_bot(client, bot_name, bot_username)
-                    if bot_token:
-                        print(f'Bot created: {bot_token}')
-                        await set_bot_profile(client)  # Set bot profile
-                        write_bot_token(bot_token)  # Write Bot Token to file
-                else:
-                    print(f'Account {account["api_id"]} already has {len(existing_bots)} bots, which is the maximum allowed.')
+    tasks = [operate_bots_for_account(phone, bots, operation) for phone, bots in accounts.items()]
+    await asyncio.gather(*tasks)
 
-            elif operation == 'delete':
-                # Delete all bots (example)
-                await delete_all_bots(client)
 
 # Run the main function
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Create or delete Telegram bots')
-    parser.add_argument('operation', choices=['create', 'delete'], help='Operation to perform: create or delete')
+    parser = argparse.ArgumentParser(
+        description='Create or delete Telegram bots')
+    parser.add_argument(
+        'operation',
+        choices=[
+            'create',
+            'delete'],
+        help='Operation to perform: create or delete')
     args = parser.parse_args()
     asyncio.run(main(args.operation))
-
