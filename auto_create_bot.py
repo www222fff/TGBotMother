@@ -12,9 +12,7 @@ import socks
 
 api_id = 26120312
 api_hash = "a122106d78462db8ab24b1028f3b64b0"
-INTERVAL = 60  # create bot interval set as 60s
 proxy = (socks.HTTP, '135.245.192.7', 8000)
-
 
 async def create_bot(client, bot):
     bot_token = None
@@ -151,27 +149,29 @@ async def delete_all_bots(client):
         await delete_bot(client, bot_username)
 
 
-async def operate_bots_for_account(operation, client, phone, bots):
+async def operate_bots_for_account(operation, interval, client, phone, bots):
     if operation == 'create':
         while bots:
             # Check if the number of existing bots is less than the maximum
-            bot = bots.pop(0)
+            bot = bots[0]
             bot_token, retry_time = await create_bot(client, bot)
             if bot_token:
+                bots.remove(bot)
                 write_bot_token(phone, bot_token)  # Write Bot Token to file
                 await set_bot_profile(client, bot)  # Set bot profile
                 if bots:
                     # for next create delay for some time
-                    await asyncio.sleep(INTERVAL)
-            else:
-                bots.append(bot)
-                if retry_time:
-                    await asyncio.sleep(retry_time)  # delay based on response
+                    await asyncio.sleep(interval)
+                else:
+                    print(f"Create bot done for {phone}")
+            elif retry_time:
+                await asyncio.sleep(retry_time)  # delay based on response
 
     elif operation == 'delete':
         await delete_all_bots(client)
 
     await client.disconnect()
+
 
 async def create_clients(accounts):
     # create client has to in sequence as need verification interaction
@@ -180,12 +180,13 @@ async def create_clients(accounts):
         session_name = os.path.join('sessions', f"{phone}.session")
         client = TelegramClient(session_name, api_id, api_hash, proxy=proxy)
         clients[phone] = client
-        print(f"Begin verification for {phone}")
+        print(f"Verification for {phone}......")
         await client.start(phone=phone)
 
     return clients
 
-async def main(operation):
+
+async def main(operation, interval):
     with open('output.csv', 'w') as f:
         pass  # This will clear the file
 
@@ -211,6 +212,7 @@ async def main(operation):
     tasks = [
         operate_bots_for_account(
             operation,
+            interval,
             client,
             phone,
             accounts[phone]) for phone,
@@ -228,5 +230,11 @@ if __name__ == "__main__":
             'create',
             'delete'],
         help='Operation to perform: create or delete')
+    parser.add_argument(
+    '--interval',
+    type=int,
+    default=60,
+    help='Interval in seconds (default: 60)')
     args = parser.parse_args()
-    asyncio.run(main(args.operation))
+    
+    asyncio.run(main(args.operation, args.interval))
