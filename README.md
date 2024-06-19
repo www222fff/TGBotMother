@@ -11,9 +11,12 @@ Note:
    
    Please enter the code you received: 92458
 
-3) create bot interval default as 60s to avoid too many attempts warning, you can try other value.
+2) create bot interval default as 60s to avoid too many attempts warning, you can try other value.
 
-4) can only support change bot photo/name/about info.
+3) can only support change bot photo/name/about info.
+   
+4) Currently can auto generate 5 bots for each account, need to wait 24h for create more.
 
 # delete all bots
 python auto_create_bot.py delete
+
