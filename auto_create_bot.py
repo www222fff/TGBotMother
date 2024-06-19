@@ -12,8 +12,9 @@ import socks
 
 api_id = 26120312
 api_hash = "a122106d78462db8ab24b1028f3b64b0"
-INTERVAL = 60  #create bot interval set as 60s
+INTERVAL = 60  # create bot interval set as 60s
 proxy = (socks.HTTP, '135.245.192.7', 8000)
+
 
 async def create_bot(client, bot):
     bot_token = None
@@ -41,14 +42,16 @@ async def create_bot(client, bot):
         elif "Sorry, too many attempts." in message:
             retry_time = extract_retry_time(message)
             if retry_time:
-                print(f"Too many attempts. Waiting for {retry_time} seconds...")
+                print(
+                    f"Too many attempts. Waiting for {retry_time} seconds...")
                 token_retrieved.set()
         elif "Done! Congratulations on your new bot." in message:
             try:
                 # Find the line with the token
                 lines = message.splitlines()
                 for line in lines:
-                    if line.startswith("Use this token to access the HTTP API:"):
+                    if line.startswith(
+                            "Use this token to access the HTTP API:"):
                         bot_token = lines[lines.index(line) + 1].strip()
                         token_retrieved.set()  # Signal that bot_token has been retrieved
             except IndexError:
@@ -59,16 +62,21 @@ async def create_bot(client, bot):
             token_retrieved.set()
 
     # Register the handler function for BotFather messages
-    client.add_event_handler(handler, events.NewMessage(from_users='BotFather'))
-    
-    await client.send_message('BotFather','/newbot')
+    client.add_event_handler(
+        handler, events.NewMessage(
+            from_users='BotFather'))
+
+    await client.send_message('BotFather', '/newbot')
     await token_retrieved.wait()
 
     # Must remove handler to avoid interaction chaos
-    client.remove_event_handler(handler, events.NewMessage(from_users='BotFather'))
+    client.remove_event_handler(
+        handler, events.NewMessage(
+            from_users='BotFather'))
 
     print(f"return bot_token:{bot_token} retry_time:{retry_time}")
     return bot_token, retry_time
+
 
 async def set_bot_profile(client, bot):
     avatar_dir = './photos'
@@ -77,7 +85,7 @@ async def set_bot_profile(client, bot):
 
     try:
         photo = await client.upload_file(avatar_path, part_size_kb=512)
-        await client(UploadProfilePhotoRequest(bot=bot['username'],file=photo))
+        await client(UploadProfilePhotoRequest(bot=bot['username'], file=photo))
 
         await client(SetBotInfoRequest(
             lang_code='en',
@@ -89,9 +97,11 @@ async def set_bot_profile(client, bot):
     except Exception as e:
         print(f"Error set profile for {bot['username']}: {e}")
 
+
 def write_bot_token(phone, bot_token):
     with open('output.csv', 'a') as file:
         file.write(f"Account: {phone} bot token: {bot_token}\n")
+
 
 async def list_my_bots(client):
     bots = []
@@ -140,29 +150,40 @@ async def delete_all_bots(client):
     for bot_username in bot_usernames:
         await delete_bot(client, bot_username)
 
-async def operate_bots_for_account(phone, bots, operation):
-    session_name = os.path.join('sessions', f"{phone}.session")
-    async with TelegramClient(session_name, api_id, api_hash, proxy=proxy) as client:
-        await client.start()
-        if operation == 'create':
-            while bots:
-                # Check if the number of existing bots is less than the maximum
-                bot = bots.pop(0)
-                bot_token, retry_time = await create_bot(client, bot)
-                if bot_token:
-                    write_bot_token(phone, bot_token)  # Write Bot Token to file
-                    await set_bot_profile(client, bot)  # Set bot profile
-                    if bots:
-                        await asyncio.sleep(INTERVAL) #for next create delay for some time
-                else:
-                    bots.append(bot) 
-                    if retry_time:
-                        await asyncio.sleep(retry_time) #delay based on response
 
-        elif operation == 'delete':
-            await delete_all_bots(client)
+async def operate_bots_for_account(operation, client, phone, bots):
+    if operation == 'create':
+        while bots:
+            # Check if the number of existing bots is less than the maximum
+            bot = bots.pop(0)
+            bot_token, retry_time = await create_bot(client, bot)
+            if bot_token:
+                write_bot_token(phone, bot_token)  # Write Bot Token to file
+                await set_bot_profile(client, bot)  # Set bot profile
+                if bots:
+                    # for next create delay for some time
+                    await asyncio.sleep(INTERVAL)
+            else:
+                bots.append(bot)
+                if retry_time:
+                    await asyncio.sleep(retry_time)  # delay based on response
 
-        await client.disconnect()
+    elif operation == 'delete':
+        await delete_all_bots(client)
+
+    await client.disconnect()
+
+async def create_clients(accounts):
+    # create client has to in sequence as need verification interaction
+    clients = {}
+    for phone, _ in accounts.items():
+        session_name = os.path.join('sessions', f"{phone}.session")
+        client = TelegramClient(session_name, api_id, api_hash, proxy=proxy)
+        clients[phone] = client
+        print(f"Begin verification for {phone}")
+        await client.start(phone=phone)
+
+    return clients
 
 async def main(operation):
     with open('output.csv', 'w') as f:
@@ -186,7 +207,14 @@ async def main(operation):
             else:
                 accounts[phone] = [bot]
 
-    tasks = [operate_bots_for_account(phone, bots, operation) for phone, bots in accounts.items()]
+    clients = await create_clients(accounts)
+    tasks = [
+        operate_bots_for_account(
+            operation,
+            client,
+            phone,
+            accounts[phone]) for phone,
+        client in clients.items()]
     await asyncio.gather(*tasks)
 
 
