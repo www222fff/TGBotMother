@@ -12,6 +12,7 @@ Note:
    Please enter the code you received: 92549 (input the code received in TG)
 
    Begin verification for 8618560000001:
+   
    ...
 
 3) create bot interval default as 60s to avoid too many attempts warning, you can try other value.
