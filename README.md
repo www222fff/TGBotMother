@@ -2,7 +2,7 @@
 auto create bot for account
 
 # create bot
-python auto_create_bot.py create
+python auto_create_bot.py create --interval 60
 
 Note:
 1) firstly execution need login code verification for session create, then later running will reuse session need not input verification code again.
@@ -11,7 +11,7 @@ Note:
    
    Please enter the code you received: 92458
 
-3) create bot interval set as 60s to avoid too many attempts warning.
+3) create bot interval default as 60s to avoid too many attempts warning, you can try other value.
 
 4) can only support change bot photo/name/about info.
 
