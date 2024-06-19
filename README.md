@@ -9,13 +9,16 @@ Note:
    
    Begin verification for 8618560000000:
    
-   Please enter the code you received: 92458
+   Please enter the code you received: 92549 (input the code received in TG)
 
-2) create bot interval default as 60s to avoid too many attempts warning, you can try other value.
+   Begin verification for 8618560000001:
+   ...
 
-3) can only support change bot photo/name/about info.
+3) create bot interval default as 60s to avoid too many attempts warning, you can try other value.
+
+4) can only support change bot photo/name/about info.
    
-4) Currently can auto generate 5 bots for each account, need to wait 24h for create more.
+5) Currently can auto generate 5 bots for each account, need to wait 24h for create more.
 
 # delete all bots
 python auto_create_bot.py delete
