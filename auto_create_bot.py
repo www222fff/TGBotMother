@@ -73,6 +73,31 @@ async def create_bot(client, bot):
     print(f"return bot_token:{bot_token} retry_time:{retry_time}")
     return bot_token, retry_time
 
+async def set_privacy(client, bot):
+    set_done = asyncio.Event()
+    async def handler(event):
+        if "Choose a bot" in event.raw_text:
+            await client.send_message('BotFather', '@'+bot['username'])
+        elif "Current status is: ENABLED" in event.raw_text:
+            await client.send_message('BotFather', 'Disable')
+            print("Group privacy disable set done")
+            set_done.set()
+        else:
+            print("Group privacy already disabled")
+            set_done.set()
+
+    # Register the handler function for BotFather messages
+    client.add_event_handler(
+        handler, events.NewMessage(
+            from_users='BotFather'))
+
+    await client.send_message('BotFather', '/setprivacy')
+    await set_done.wait()
+
+    # Must remove handler to avoid interaction chaos
+    client.remove_event_handler(
+        handler, events.NewMessage(
+            from_users='BotFather'))
 
 async def set_bot_profile(client, bot):
     avatar_dir = './photos'
@@ -89,10 +114,10 @@ async def set_bot_profile(client, bot):
             name=bot['name'],
             about=bot['about']
         ))
+
         print(f"Profile set for {bot['username']}")
     except Exception as e:
         print(f"Error set profile for {bot['username']}: {e}")
-
 
 def write_bot_token(phone, bot_token):
     with open('output.csv', 'a') as file:
@@ -157,6 +182,7 @@ async def operate_bots_for_account(operation, interval, client, phone, bots):
                 bots.remove(bot)
                 write_bot_token(phone, bot_token)  # Write Bot Token to file
                 await set_bot_profile(client, bot)  # Set bot profile
+                await set_privacy(client, bot)  # Set bot profile
                 if bots:
                     # for next create delay for some time
                     print(f"Waiting for {interval} seconds...")
@@ -168,7 +194,7 @@ async def operate_bots_for_account(operation, interval, client, phone, bots):
                     print(f"Waiting for {retry_time} seconds...")
                     await asyncio.sleep(retry_time)  # delay based on response
                 else:
-                    print(f"Please create tomorrow...")
+                    print(f"Please retry tomorrow...")
                     break
 
     elif operation == 'delete':
