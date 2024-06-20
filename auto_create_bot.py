@@ -40,8 +40,6 @@ async def create_bot(client, bot):
         elif "Sorry, too many attempts." in message:
             retry_time = extract_retry_time(message)
             if retry_time:
-                print(
-                    f"Too many attempts. Waiting for {retry_time} seconds...")
                 token_retrieved.set()
         elif "Done! Congratulations on your new bot." in message:
             try:
@@ -161,11 +159,17 @@ async def operate_bots_for_account(operation, interval, client, phone, bots):
                 await set_bot_profile(client, bot)  # Set bot profile
                 if bots:
                     # for next create delay for some time
+                    print(f"Waiting for {interval} seconds...")
                     await asyncio.sleep(interval)
                 else:
                     print(f"Create bot done for {phone}")
             elif retry_time:
-                await asyncio.sleep(retry_time)  # delay based on response
+                if retry_time < 80000:
+                    print(f"Waiting for {retry_time} seconds...")
+                    await asyncio.sleep(retry_time)  # delay based on response
+                else:
+                    print(f"Please create tomorrow...")
+                    break
 
     elif operation == 'delete':
         await delete_all_bots(client)
