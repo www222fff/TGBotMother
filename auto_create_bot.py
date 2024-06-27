@@ -12,13 +12,11 @@ import socks
 
 api_id = 26120312
 api_hash = "a122106d78462db8ab24b1028f3b64b0"
-proxy = (socks.HTTP, '135.245.192.7', 8000)
 
 async def create_bot(client, bot):
     bot_token = None
     retry_time = None
     token_retrieved = asyncio.Event()
-    print(f"start create bot for {bot}")
 
     def extract_retry_time(message):
         match = re.search(r"Please try again in (\d+) seconds", message)
@@ -54,7 +52,8 @@ async def create_bot(client, bot):
                 print("Error: Failed to extract bot token from message:", message)
                 token_retrieved.set()  # Signal that bot_token has been retrieved
         elif "Sorry, this username":
-            print("Error: INVALID username")
+            print(f"Error: INVALID username {bot['username']}")
+            bot_token = 'INVALID'
             token_retrieved.set()
 
     # Register the handler function for BotFather messages
@@ -70,7 +69,6 @@ async def create_bot(client, bot):
         handler, events.NewMessage(
             from_users='BotFather'))
 
-    print(f"return bot_token:{bot_token} retry_time:{retry_time}")
     return bot_token, retry_time
 
 async def set_privacy(client, bot):
@@ -80,10 +78,10 @@ async def set_privacy(client, bot):
             await client.send_message('BotFather', '@'+bot['username'])
         elif "Current status is: ENABLED" in event.raw_text:
             await client.send_message('BotFather', 'Disable')
-            print("Group privacy disable set done")
+            print(f"Group privacy disabled for {bot['username']}")
             set_done.set()
         else:
-            print("Group privacy already disabled")
+            print(f"Group privacy already disabled {bot['username']}")
             set_done.set()
 
     # Register the handler function for BotFather messages
@@ -114,7 +112,6 @@ async def set_bot_profile(client, bot):
             name=bot['name'],
             about=bot['about']
         ))
-
         print(f"Profile set for {bot['username']}")
     except Exception as e:
         print(f"Error set profile for {bot['username']}: {e}")
@@ -179,22 +176,24 @@ async def operate_bots_for_account(operation, interval, client, phone, bots):
             bot = bots[0]
             bot_token, retry_time = await create_bot(client, bot)
             if bot_token:
+                if bot_token != 'INVALID':
+                    print(f"---------created bot {bot} for account {phone}---------")
+                    write_bot_token(phone, bot_token)  # Write Bot Token to file
+                    await set_bot_profile(client, bot)  # Set bot profile
+                    await set_privacy(client, bot)  # Set bot profile
                 bots.remove(bot)
-                write_bot_token(phone, bot_token)  # Write Bot Token to file
-                await set_bot_profile(client, bot)  # Set bot profile
-                await set_privacy(client, bot)  # Set bot profile
                 if bots:
                     # for next create delay for some time
-                    print(f"Waiting for {interval} seconds...")
+                    print(f"Waiting for {interval} seconds to create next bot for {phone}...")
                     await asyncio.sleep(interval)
                 else:
                     print(f"Create bot done for {phone}")
             elif retry_time:
                 if retry_time < 80000:
-                    print(f"Waiting for {retry_time} seconds...")
+                    print(f"Waiting for {retry_time} seconds to retry create bot for {phone}...")
                     await asyncio.sleep(retry_time)  # delay based on response
                 else:
-                    print(f"Please retry tomorrow...")
+                    print(f"Please retry tomorrow to create bot for {phone}...")
                     break
 
     elif operation == 'delete':
@@ -203,23 +202,30 @@ async def operate_bots_for_account(operation, interval, client, phone, bots):
     await client.disconnect()
 
 
-async def create_clients(accounts):
+async def create_clients(accounts, proxy):
     # create client has to in sequence as need verification interaction
     clients = {}
     for phone, _ in accounts.items():
         session_name = os.path.join('sessions', f"{phone}.session")
-        client = TelegramClient(session_name, api_id, api_hash, proxy=proxy)
+        client = TelegramClient(session_name, api_id, api_hash, proxy=proxy) if proxy else TelegramClient(session_name, api_id, api_hash)
         clients[phone] = client
-        print(f"Verification for {phone}......")
+        print(f"Verification for account {phone}......")
         await client.start(phone=phone)
 
     return clients
 
+def parse_proxy(proxy_arg):
+    if proxy_arg:
+        parts = proxy_arg.split(':')
+        if len(parts) != 2:
+            raise ValueError("Proxy format is incorrect. Use ip:port")
+        host = parts[0]
+        port = int(parts[1])
 
-async def main(operation, interval):
-    with open('output.csv', 'w') as f:
-        pass  # This will clear the file
+        return (socks.HTTP, host, port)
+    return None
 
+async def main(operation, interval, proxy_arg):
     accounts = {}
     with open('input.csv', 'r') as file:
         reader = csv.DictReader(file)
@@ -238,7 +244,9 @@ async def main(operation, interval):
             else:
                 accounts[phone] = [bot]
 
-    clients = await create_clients(accounts)
+    proxy = parse_proxy(proxy_arg)
+
+    clients = await create_clients(accounts, proxy)
     tasks = [
         operate_bots_for_account(
             operation,
@@ -252,19 +260,10 @@ async def main(operation, interval):
 
 # Run the main function
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description='Create or delete Telegram bots')
-    parser.add_argument(
-        'operation',
-        choices=[
-            'create',
-            'delete'],
-        help='Operation to perform: create or delete')
-    parser.add_argument(
-    '--interval',
-    type=int,
-    default=60,
-    help='Interval in seconds (default: 60)')
+    parser = argparse.ArgumentParser(description='Create or delete Telegram bots')
+    parser.add_argument('operation', choices=['create', 'delete'], help='Operation to perform: create or delete')
+    parser.add_argument('--interval', type=int, default=5, help='Interval in seconds (default: 5)')
+    parser.add_argument('--proxy', type=str, default=None, help='Proxy server in the format: host:port')
     args = parser.parse_args()
     
-    asyncio.run(main(args.operation, args.interval))
+    asyncio.run(main(args.operation, args.interval, args.proxy))
